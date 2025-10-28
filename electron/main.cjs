@@ -1,6 +1,6 @@
 console.log('🚀 main.cjs: Starting Electron main process...');
 
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 console.log('✅ main.cjs: Electron modules imported');
 
 const path = require('path');
@@ -98,6 +98,106 @@ ipcMain.handle('ffmpeg-format-file-size', async (event, bytes) => {
 
 ipcMain.handle('ffmpeg-format-duration', async (event, seconds) => {
   return ffmpegHandler.formatDuration(seconds);
+});
+
+// File picker IPC handlers
+ipcMain.handle('file-picker-open', async () => {
+  console.log('📁 main.cjs: File picker dialog requested');
+  
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Media Files',
+      buttonLabel: 'Import',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Video Files',
+          extensions: ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', '3gp', 'flv', 'wmv']
+        },
+        {
+          name: 'All Files',
+          extensions: ['*']
+        }
+      ]
+    });
+    
+    if (result.canceled) {
+      console.log('📁 main.cjs: File picker canceled');
+      return { canceled: true, files: [] };
+    }
+    
+    console.log('📁 main.cjs: Files selected:', result.filePaths);
+    
+    // Convert file paths to file objects with metadata
+    const files = await Promise.all(
+      result.filePaths.map(async (filePath) => {
+        const fs = require('fs').promises;
+        const stats = await fs.stat(filePath);
+        
+        return {
+          name: path.basename(filePath),
+          path: filePath,
+          size: stats.size,
+          type: getMimeType(filePath),
+          lastModified: stats.mtime.getTime(),
+        };
+      })
+    );
+    
+    return { canceled: false, files };
+    
+  } catch (error) {
+    console.error('❌ main.cjs: File picker error:', error);
+    throw new Error(`Failed to open file picker: ${error.message}`);
+  }
+});
+
+// Helper function to get MIME type from file extension
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes = {
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.avi': 'video/x-msvideo',
+    '.mkv': 'video/x-matroska',
+    '.m4v': 'video/x-m4v',
+    '.3gp': 'video/3gpp',
+    '.flv': 'video/x-flv',
+    '.wmv': 'video/x-ms-wmv',
+  };
+  return mimeTypes[ext] || 'video/mp4';
+}
+
+// IPC handler for processing dropped files
+ipcMain.handle('process-dropped-files', async (event, filePaths) => {
+  console.log('📁 main.cjs: Processing dropped files:', filePaths);
+  
+  try {
+    const fs = require('fs').promises;
+    
+    // Process each file path
+    const files = await Promise.all(
+      filePaths.map(async (filePath) => {
+        const stats = await fs.stat(filePath);
+        
+        return {
+          name: path.basename(filePath),
+          path: filePath,
+          size: stats.size,
+          type: getMimeType(filePath),
+          lastModified: stats.mtime.getTime(),
+        };
+      })
+    );
+    
+    console.log('📁 main.cjs: Processed dropped files:', files);
+    return { success: true, files };
+    
+  } catch (error) {
+    console.error('❌ main.cjs: Error processing dropped files:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 function createMenu() {

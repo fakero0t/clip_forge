@@ -12,6 +12,9 @@ console.log('✅ main.js: App component imported successfully');
 import './styles/main.css';
 console.log('✅ main.js: Styles imported successfully');
 
+import './services/electronAPI.js';
+console.log('✅ main.js: Electron API imported successfully');
+
 console.log('🔧 main.js: Creating Vue app...');
 const app = createApp(App);
 console.log('✅ main.js: Vue app created');

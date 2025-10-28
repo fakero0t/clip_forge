@@ -11,16 +11,8 @@
     </header>
 
     <main class="app-main">
-      <aside class="media-library">
-        <h2>Media Library</h2>
-        <div class="library-content">
-          <p class="placeholder-text">Import media to get started</p>
-          <div class="ffmpeg-info" v-if="!ffmpegAvailable">
-            <p class="warning-text">⚠️ FFmpeg not installed</p>
-            <p class="info-text">Install FFmpeg to enable video processing</p>
-            <p class="info-text">macOS: brew install ffmpeg</p>
-          </div>
-        </div>
+      <aside class="media-library-container">
+        <MediaLibrary :ffmpeg-available="ffmpegAvailable" />
       </aside>
 
       <section class="editor-section">
@@ -57,9 +49,13 @@
 
 <script>
 import { testFFmpegIntegration } from './utils/testFFmpeg.js';
+import MediaLibrary from './components/MediaLibrary.vue';
 
 export default {
   name: 'App',
+  components: {
+    MediaLibrary,
+  },
   data() {
     return {
       ffmpegStatus: 'Checking...',
@@ -145,26 +141,12 @@ export default {
   overflow: hidden;
 }
 
-.media-library {
+.media-library-container {
   width: 280px;
   background-color: #202020;
   border-right: 1px solid #333;
   display: flex;
   flex-direction: column;
-}
-
-.media-library h2 {
-  margin: 0;
-  padding: 16px;
-  font-size: 16px;
-  font-weight: 600;
-  border-bottom: 1px solid #333;
-}
-
-.library-content {
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
 }
 
 .editor-section {
@@ -301,24 +283,4 @@ export default {
   font-weight: 500;
 }
 
-.ffmpeg-info {
-  margin-top: 16px;
-  padding: 12px;
-  background-color: #2a2a2a;
-  border-radius: 4px;
-  border-left: 3px solid #ff6b6b;
-}
-
-.warning-text {
-  color: #ff6b6b;
-  font-size: 12px;
-  font-weight: 600;
-  margin: 0 0 4px 0;
-}
-
-.info-text {
-  color: #aaa;
-  font-size: 11px;
-  margin: 0;
-}
 </style>
