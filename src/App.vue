@@ -24,9 +24,16 @@
         <Timeline />
 
         <div class="transport-controls">
-          <button class="btn-transport" title="Play/Pause">▶</button>
-          <button class="btn-transport" title="Stop">■</button>
-          <span class="timecode">00:00:00</span>
+          <button 
+            class="btn-transport" 
+            :class="{ 'playing': timelineStore.isPlaying }"
+            @click="togglePlayPause" 
+            :title="timelineStore.isPlaying ? 'Pause' : 'Play'"
+          >
+            {{ timelineStore.isPlaying ? '⏸' : '▶' }}
+          </button>
+          <button class="btn-transport" @click="stop" title="Stop">■</button>
+          <span class="timecode">{{ formatTime(timelineStore.currentTime) }}</span>
         </div>
       </section>
     </main>
@@ -109,6 +116,33 @@ export default {
         this.$refs.videoPlayer.loadVideo(videoFile);
       } else {
         console.error('❌ App: VideoPlayer ref not found');
+      }
+    },
+    
+    // Transport control methods
+    togglePlayPause() {
+      if (this.timelineStore.isPlaying) {
+        this.timelineStore.pause();
+      } else {
+        this.timelineStore.play();
+      }
+    },
+    
+    stop() {
+      this.timelineStore.stop();
+    },
+    
+    formatTime(seconds) {
+      if (!seconds || isNaN(seconds)) return '00:00';
+      
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = Math.floor(seconds % 60);
+      
+      if (hours > 0) {
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      } else {
+        return `${minutes}:${secs.toString().padStart(2, '0')}`;
       }
     },
   },
@@ -258,6 +292,14 @@ export default {
 
 .btn-transport:hover {
   background-color: #444;
+}
+
+.btn-transport.playing {
+  background-color: #4a9eff;
+}
+
+.btn-transport.playing:hover {
+  background-color: #3a8eef;
 }
 
 .timecode {

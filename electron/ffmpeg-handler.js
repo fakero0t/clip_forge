@@ -97,6 +97,19 @@ class FFmpegHandler {
       throw new Error('FFmpeg is not available');
     }
 
+    console.log(`🎬 ffmpeg-handler.js: Generating thumbnail for ${inputPath}`);
+
+    // Check if input file exists
+    if (!fs.existsSync(inputPath)) {
+      throw new Error(`Input file does not exist: ${inputPath}`);
+    }
+
+    // Ensure output directory exists
+    const outputDir = path.dirname(outputPath);
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
     const {
       width = 160,
       height = 90,
@@ -110,19 +123,53 @@ class FFmpegHandler {
         .size(`${width}x${height}`)
         .outputOptions([
           '-q:v', quality.toString(),
-          '-f', 'image2'
+          '-f', 'image2',
+          '-y'
         ])
         .output(outputPath)
         .on('end', () => {
-          console.log(`Thumbnail generated: ${outputPath}`);
+          console.log(`✅ ffmpeg-handler.js: Thumbnail generated: ${outputPath}`);
           resolve(outputPath);
         })
         .on('error', (err) => {
-          console.error('Thumbnail generation failed:', err.message);
+          console.error(`❌ ffmpeg-handler.js: Thumbnail generation failed:`, err.message);
           reject(new Error(`Failed to generate thumbnail: ${err.message}`));
         })
         .run();
     });
+  }
+
+  // Fallback thumbnail generation with multiple time offsets
+  async generateThumbnailWithFallback(inputPath, outputPath, options = {}) {
+    console.log(`🎬 ffmpeg-handler.js: Starting fallback thumbnail generation for ${inputPath}`);
+    
+    // Try simple thumbnail generation first
+    try {
+      console.log(`🔄 ffmpeg-handler.js: Trying simple thumbnail generation`);
+      const result = await this.generateThumbnail(inputPath, outputPath, 1, options);
+      console.log(`✅ ffmpeg-handler.js: Thumbnail generated successfully`);
+      return result;
+    } catch (error) {
+      console.warn(`⚠️ ffmpeg-handler.js: Simple generation failed: ${error.message}`);
+      
+      // If simple generation fails, try different time offsets
+      const timeOffsets = [0.5, 2, 5, 10];
+      
+      for (const timeOffset of timeOffsets) {
+        try {
+          console.log(`🔄 ffmpeg-handler.js: Trying thumbnail generation at ${timeOffset}s`);
+          const result = await this.generateThumbnail(inputPath, outputPath, timeOffset, options);
+          console.log(`✅ ffmpeg-handler.js: Thumbnail generated successfully at ${timeOffset}s`);
+          return result;
+        } catch (error) {
+          console.warn(`⚠️ ffmpeg-handler.js: Failed at ${timeOffset}s: ${error.message}`);
+          if (timeOffset === timeOffsets[timeOffsets.length - 1]) {
+            // Last attempt failed, throw the error
+            throw error;
+          }
+        }
+      }
+    }
   }
 
   parseFPS(frameRate) {
@@ -136,6 +183,7 @@ class FFmpegHandler {
     const ext = path.extname(filePath).toLowerCase();
     return supportedExtensions.includes(ext);
   }
+
 
   formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';

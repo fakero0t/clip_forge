@@ -82,8 +82,10 @@ ipcMain.handle('ffmpeg-get-metadata', async (event, filePath) => {
 
 ipcMain.handle('ffmpeg-generate-thumbnail', async (event, inputPath, outputPath, timeOffset, options) => {
   try {
-    return await ffmpegHandler.generateThumbnail(inputPath, outputPath, timeOffset, options);
+    console.log(`🎬 main.cjs: Generating thumbnail for ${inputPath}`);
+    return await ffmpegHandler.generateThumbnailWithFallback(inputPath, outputPath, options);
   } catch (error) {
+    console.error(`❌ main.cjs: Thumbnail generation failed: ${error.message}`);
     throw new Error(`Failed to generate thumbnail: ${error.message}`);
   }
 });

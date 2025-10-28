@@ -37,7 +37,7 @@
             <span class="track-number">{{ index + 1 }}</span>
           </div>
           
-          <div class="track-content">
+          <div class="track-content" @click="handleTrackClick">
             <!-- Clip Blocks -->
             <div 
               v-for="clip in track.clips" 
@@ -116,6 +116,16 @@ export default {
         this.syncTracksWithMediaFiles(newMediaFiles);
       },
       deep: true,
+    },
+    
+    // Watch for changes in timeline store currentTime
+    'timelineStore.currentTime': {
+      handler(newTime) {
+        if (Math.abs(newTime - this.currentTime) > 0.1) {
+          this.currentTime = newTime;
+        }
+      },
+      immediate: false,
     },
   },
   
@@ -311,6 +321,8 @@ export default {
       
       if (this.dragType === 'playhead') {
         this.currentTime = Math.max(0, this.currentTime + deltaTime);
+        // Update timeline store to sync with video player
+        this.timelineStore.setCurrentTime(this.currentTime);
       }
       // Handle clip dragging here
     },
@@ -318,6 +330,22 @@ export default {
     handleMouseUp() {
       this.isDragging = false;
       this.dragType = null;
+    },
+    
+    handleTrackClick(event) {
+      // Only handle clicks if not dragging
+      if (this.isDragging) return;
+      
+      // Calculate time based on click position
+      const rect = event.currentTarget.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const time = clickX / (this.pixelsPerSecond * this.zoomLevel);
+      
+      // Update current time and sync with timeline store
+      this.currentTime = Math.max(0, time);
+      this.timelineStore.setCurrentTime(this.currentTime);
+      
+      console.log('🎯 Timeline: Clicked to time:', this.currentTime);
     },
     
     // Utility functions
