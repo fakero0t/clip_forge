@@ -27,6 +27,8 @@ function createWindow() {
       nodeIntegration: true,
       contextIsolation: false,
       enableRemoteModule: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
     },
     backgroundColor: '#1a1a1a',
     show: false,
@@ -51,6 +53,20 @@ function createWindow() {
     mainWindow.show();
   });
 
+  // Allow local file access
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          'default-src \'self\' \'unsafe-inline\' \'unsafe-eval\' file: data: blob: video:; ' +
+          'media-src \'self\' file: data: blob: video:; ' +
+          'img-src \'self\' file: data: blob: thumbnail: video:'
+        ]
+      }
+    });
+  });
+
   // Create application menu
   createMenu();
 
@@ -66,7 +82,9 @@ ipcMain.handle('ffmpeg-check-availability', async () => {
     console.log('❌ main.cjs: FFmpeg handler not initialized');
     return false;
   }
-  const result = ffmpegHandler.isAvailable;
+  
+  // Use synchronous check for immediate response
+  const result = await ffmpegHandler.checkAvailabilitySync();
   console.log('📊 main.cjs: FFmpeg availability result:', result);
   return result;
 });
@@ -76,8 +94,24 @@ ipcMain.handle('ffmpeg-get-metadata', async (event, filePath) => {
     if (!ffmpegHandler) {
       throw new Error('FFmpeg handler not initialized');
     }
-    return await ffmpegHandler.getVideoMetadata(filePath);
+    
+    // Check FFmpeg availability synchronously
+    const isAvailable = await ffmpegHandler.checkAvailabilitySync();
+    if (!isAvailable) {
+      throw new Error('FFmpeg is not available');
+    }
+    
+    console.log(`🔍 main.cjs: Getting metadata for: ${filePath}`);
+    
+    // Try the fallback method first for better error handling
+    try {
+      return await ffmpegHandler.getVideoMetadataWithFallback(filePath);
+    } catch (fallbackError) {
+      console.error(`❌ main.cjs: Fallback metadata extraction failed:`, fallbackError.message);
+      throw fallbackError;
+    }
   } catch (error) {
+    console.error(`❌ main.cjs: Metadata extraction error:`, error.message);
     throw new Error(`Failed to get metadata: ${error.message}`);
   }
 });
@@ -87,8 +121,15 @@ ipcMain.handle('ffmpeg-generate-thumbnail', async (event, inputPath, outputPath,
     if (!ffmpegHandler) {
       throw new Error('FFmpeg handler not initialized');
     }
+    
+    // Check FFmpeg availability synchronously
+    const isAvailable = await ffmpegHandler.checkAvailabilitySync();
+    if (!isAvailable) {
+      throw new Error('FFmpeg is not available');
+    }
+    
     console.log(`🎬 main.cjs: Generating thumbnail for ${inputPath}`);
-    return await ffmpegHandler.generateThumbnailWithFallback(inputPath, outputPath, options);
+    return await ffmpegHandler.generateThumbnailWithFallback(inputPath, outputPath, timeOffset, options);
   } catch (error) {
     console.error(`❌ main.cjs: Thumbnail generation failed: ${error.message}`);
     throw new Error(`Failed to generate thumbnail: ${error.message}`);
@@ -374,6 +415,14 @@ app.whenReady().then(() => {
   protocol.registerFileProtocol('thumbnail', (request, callback) => {
     const url = request.url.substr(12); // Remove 'thumbnail://' prefix
     const filePath = path.join(__dirname, '..', url);
+    callback({ path: filePath });
+  });
+
+  // Register a custom protocol for serving video files
+  protocol.registerFileProtocol('video', (request, callback) => {
+    const url = request.url.substr(8); // Remove 'video://' prefix
+    const filePath = decodeURIComponent(url);
+    console.log('🎬 main.cjs: Serving video file:', filePath);
     callback({ path: filePath });
   });
 

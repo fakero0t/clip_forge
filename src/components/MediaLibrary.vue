@@ -43,8 +43,12 @@
           :class="{ 
             'processing': file.isProcessing, 
             'error': file.error,
-            'thumbnail-loaded': file.thumbnailGenerated
+            'thumbnail-loaded': file.thumbnailGenerated,
+            'dragging': file.isDragging
           }"
+          draggable="true"
+          @dragstart="handleDragStart(file, $event)"
+          @dragend="handleDragEnd(file, $event)"
         >
           <div class="media-thumbnail" @click="selectVideo(file)">
             <img 
@@ -98,6 +102,9 @@
             </div>
             <div v-if="file.error" class="error-message">
               {{ file.error }}
+            </div>
+            <div v-if="file.metadataError && !file.error" class="metadata-warning">
+              ⚠️ Limited metadata: {{ file.metadataError }}
             </div>
             <div v-if="file.thumbnailError" class="thumbnail-error-message">
               Thumbnail: {{ file.thumbnailError }}
@@ -367,6 +374,45 @@ export default {
       console.log('🎬 MediaLibrary: Video selected:', file.name);
       this.$emit('video-selected', file);
     },
+
+    // Drag and drop methods
+    handleDragStart(file, event) {
+      console.log('🎬 MediaLibrary: Starting drag for:', file.name);
+      
+      // Set dragging state
+      this.$set(file, 'isDragging', true);
+      
+      // Set drag data
+      event.dataTransfer.setData('application/json', JSON.stringify({
+        type: 'media-file',
+        file: file
+      }));
+      
+      // Set drag effect
+      event.dataTransfer.effectAllowed = 'copy';
+      
+      // Create drag image
+      const dragImage = event.target.cloneNode(true);
+      dragImage.style.transform = 'rotate(5deg)';
+      dragImage.style.opacity = '0.8';
+      dragImage.style.pointerEvents = 'none';
+      document.body.appendChild(dragImage);
+      event.dataTransfer.setDragImage(dragImage, 0, 0);
+      
+      // Clean up drag image after a short delay
+      setTimeout(() => {
+        if (document.body.contains(dragImage)) {
+          document.body.removeChild(dragImage);
+        }
+      }, 0);
+    },
+
+    handleDragEnd(file, event) {
+      console.log('🎬 MediaLibrary: Drag ended for:', file.name);
+      
+      // Clear dragging state
+      this.$set(file, 'isDragging', false);
+    },
   },
 };
 </script>
@@ -554,6 +600,13 @@ export default {
   border-color: #5aaeff;
 }
 
+.media-item.dragging {
+  opacity: 0.5;
+  transform: rotate(5deg) scale(0.95);
+  z-index: 1000;
+  pointer-events: none;
+}
+
 .media-thumbnail {
   width: 100%;
   height: 80px;
@@ -706,6 +759,13 @@ export default {
 
 .thumbnail-error-message {
   color: #ffa500;
+}
+
+.metadata-warning {
+  font-size: 9px;
+  color: #ffa500;
+  margin-top: 4px;
+  line-height: 1.2;
 }
 
 .media-actions {

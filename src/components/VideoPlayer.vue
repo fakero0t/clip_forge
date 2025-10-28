@@ -88,6 +88,10 @@ export default {
       // Timeline sync
       timelineSyncEnabled: true,
       lastTimelineTime: 0,
+      
+      // Resize handling
+      resizeObserver: null,
+      resizeTimeout: null,
     };
   },
   
@@ -144,6 +148,7 @@ export default {
   mounted() {
     console.log('🎬 VideoPlayer: Component mounted');
     this.setupVideoElement();
+    this.setupResizeObserver();
   },
   
   beforeUnmount() {
@@ -154,15 +159,35 @@ export default {
     // Video element setup
     setupVideoElement() {
       if (this.$refs.videoElement) {
+        console.log('🎬 VideoPlayer: Setting up video element event listeners');
         this.$refs.videoElement.addEventListener('loadstart', this.onLoadStart);
         this.$refs.videoElement.addEventListener('progress', this.onProgress);
         this.$refs.videoElement.addEventListener('seeking', this.onSeeking);
         this.$refs.videoElement.addEventListener('seeked', this.onSeeked);
+        
+        // Add additional debugging
+        this.$refs.videoElement.addEventListener('loadstart', () => {
+          console.log('🎬 VideoPlayer: Load start event fired');
+        });
+        
+        this.$refs.videoElement.addEventListener('canplay', () => {
+          console.log('🎬 VideoPlayer: Can play event fired');
+        });
+        
+        this.$refs.videoElement.addEventListener('error', (event) => {
+          console.log('🎬 VideoPlayer: Error event fired with details:', {
+            error: event.target.error,
+            networkState: event.target.networkState,
+            readyState: event.target.readyState
+          });
+        });
+      } else {
+        console.error('❌ VideoPlayer: Video element not found during setup');
       }
     },
     
     // Video loading methods
-    loadVideo(videoFile) {
+    async loadVideo(videoFile) {
       console.log('🎬 VideoPlayer: loadVideo called with:', videoFile);
       
       // Clear previous state
@@ -175,10 +200,61 @@ export default {
         this.currentVideoName = videoFile.name;
         this.currentPoster = videoFile.thumbnail || null;
         
+        // Validate file path
+        if (!videoFile.path) {
+          console.error('❌ VideoPlayer: No file path provided');
+          this.hasError = true;
+          this.errorMessage = 'No file path provided for video.';
+          this.isLoading = false;
+          return;
+        }
+        
+        // Log file path details for debugging
+        console.log('🎬 VideoPlayer: File path details:', {
+          originalPath: videoFile.path,
+          isElectron: window.electronAPI && window.electronAPI.isElectron,
+          pathType: videoFile.path.startsWith('file://') ? 'file:// URL' : 
+                   videoFile.path.startsWith('http') ? 'HTTP URL' : 'Local path'
+        });
+        
+        // Check if file is accessible (in Electron environment)
+        if (window.electronAPI && window.electronAPI.isElectron) {
+          try {
+            const isSupported = await window.electronAPI.isSupportedVideoFormat(videoFile.path);
+            if (!isSupported) {
+              console.error('❌ VideoPlayer: Unsupported video format');
+              this.hasError = true;
+              this.errorMessage = 'Unsupported video format. Please use MP4, MOV, WebM, AVI, or MKV files.';
+              this.isLoading = false;
+              return;
+            }
+          } catch (error) {
+            console.warn('⚠️ VideoPlayer: Could not verify video format:', error);
+            // Continue loading even if format check fails
+          }
+        }
+        
         // Set video source
         if (this.$refs.videoElement) {
-          this.$refs.videoElement.src = videoFile.path;
+          // In Electron, use custom video:// protocol for better compatibility
+          let videoSrc = videoFile.path;
+          
+          if (window.electronAPI && window.electronAPI.isElectron) {
+            // Check if it's already a protocol URL
+            if (!videoSrc.startsWith('video://') && !videoSrc.startsWith('file://') && !videoSrc.startsWith('http://') && !videoSrc.startsWith('https://')) {
+              // Use custom video:// protocol for better Electron compatibility
+              videoSrc = `video://${encodeURIComponent(videoSrc)}`;
+            }
+          }
+          
+          console.log('🎬 VideoPlayer: Setting video source to:', videoSrc);
+          this.$refs.videoElement.src = videoSrc;
           this.$refs.videoElement.load();
+        } else {
+          console.error('❌ VideoPlayer: Video element not found');
+          this.hasError = true;
+          this.errorMessage = 'Video element not available.';
+          this.isLoading = false;
         }
       } else {
         this.clearVideo();
@@ -186,13 +262,13 @@ export default {
     },
     
     // Video source switching
-    switchVideoSource(videoFile) {
+    async switchVideoSource(videoFile) {
       console.log('🎬 VideoPlayer: Switching video source to:', videoFile?.name);
-      this.loadVideo(videoFile);
+      await this.loadVideo(videoFile);
     },
     
     // Preview rendering logic for timeline composition
-    renderTimelinePreview(time) {
+    async renderTimelinePreview(time) {
       if (!this.$refs.videoElement) return;
       
       // Find which clip should be playing at this time
@@ -209,7 +285,7 @@ export default {
         // Switch to this clip's video source if different
         const mediaFile = this.mediaStore.getMediaFileById(clip.mediaFileId);
         if (mediaFile && mediaFile.path !== this.currentVideoSrc) {
-          this.switchVideoSource(mediaFile);
+          await this.switchVideoSource(mediaFile);
         }
         
         // Seek to the correct time within the clip
@@ -220,13 +296,13 @@ export default {
     },
     
     // Timeline synchronization
-    syncWithTimeline(timelineTime) {
+    async syncWithTimeline(timelineTime) {
       if (!this.timelineSyncEnabled) return;
       
       // Only sync if the timeline time has changed significantly
       if (Math.abs(timelineTime - this.lastTimelineTime) > 0.1) {
         this.lastTimelineTime = timelineTime;
-        this.renderTimelinePreview(timelineTime);
+        await this.renderTimelinePreview(timelineTime);
       }
     },
     
@@ -239,17 +315,32 @@ export default {
       
       if (!container) return;
       
+      // Wait for video dimensions to be available
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        console.log('🎬 VideoPlayer: Video dimensions not ready, retrying...');
+        setTimeout(() => this.handleAspectRatio(), 100);
+        return;
+      }
+      
       const videoAspectRatio = video.videoWidth / video.videoHeight;
       const containerAspectRatio = container.clientWidth / container.clientHeight;
       
+      console.log('🎬 VideoPlayer: Aspect ratios - Video:', videoAspectRatio, 'Container:', containerAspectRatio);
+      
+      // Always use contain to fit within container
+      video.style.objectFit = 'contain';
+      video.style.maxWidth = '100%';
+      video.style.maxHeight = '100%';
+      video.style.width = 'auto';
+      video.style.height = 'auto';
+      
+      // Force the video to fit within the container bounds
       if (videoAspectRatio > containerAspectRatio) {
-        // Video is wider - letterbox (black bars top/bottom)
-        video.style.objectFit = 'contain';
+        // Video is wider - constrain by width
         video.style.width = '100%';
         video.style.height = 'auto';
       } else {
-        // Video is taller - pillarbox (black bars left/right)
-        video.style.objectFit = 'contain';
+        // Video is taller - constrain by height
         video.style.width = 'auto';
         video.style.height = '100%';
       }
@@ -308,14 +399,16 @@ export default {
       console.log('✅ VideoPlayer: Video loaded successfully');
       this.isLoading = false;
       this.hasError = false;
-      this.handleAspectRatio();
+      // Delay aspect ratio handling to ensure video dimensions are available
+      setTimeout(() => this.handleAspectRatio(), 50);
     },
     
     onMetadataLoaded() {
       console.log('📊 VideoPlayer: Metadata loaded');
       this.duration = this.$refs.videoElement.duration;
       this.videoResolution = `${this.$refs.videoElement.videoWidth}x${this.$refs.videoElement.videoHeight}`;
-      this.handleAspectRatio();
+      // Delay aspect ratio handling to ensure video dimensions are available
+      setTimeout(() => this.handleAspectRatio(), 50);
     },
     
     onCanPlay() {
@@ -373,9 +466,46 @@ export default {
     
     onVideoError(event) {
       console.error('❌ VideoPlayer: Video error:', event);
+      
+      // Extract detailed error information
+      const video = event.target;
+      const error = video.error;
+      let errorMessage = 'Failed to load video.';
+      
+      if (error) {
+        switch (error.code) {
+          case MediaError.MEDIA_ERR_ABORTED:
+            errorMessage = 'Video loading was aborted.';
+            break;
+          case MediaError.MEDIA_ERR_NETWORK:
+            errorMessage = 'Network error occurred while loading video.';
+            break;
+          case MediaError.MEDIA_ERR_DECODE:
+            errorMessage = 'Video format is not supported or file is corrupted.';
+            break;
+          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+            if (error.message && error.message.includes('DEMUXER_ERROR_COULD_NOT_OPEN')) {
+              errorMessage = 'Video file could not be opened. The file may be corrupted or in an unsupported format.';
+            } else {
+              errorMessage = 'Video format is not supported by your browser.';
+            }
+            break;
+          default:
+            errorMessage = `Video error: ${error.message || 'Unknown error'}`;
+        }
+        
+        console.error('❌ VideoPlayer: Detailed error info:', {
+          code: error.code,
+          message: error.message,
+          networkState: video.networkState,
+          readyState: video.readyState,
+          src: video.src
+        });
+      }
+      
       this.hasError = true;
       this.isLoading = false;
-      this.errorMessage = 'Failed to load video. Please check the file format and try again.';
+      this.errorMessage = errorMessage;
     },
     
     // Utility methods
@@ -446,12 +576,37 @@ export default {
       this.timelineSyncEnabled = enabled;
     },
     
+    setupResizeObserver() {
+      if (window.ResizeObserver) {
+        this.resizeObserver = new ResizeObserver(() => {
+          // Debounce resize handling
+          clearTimeout(this.resizeTimeout);
+          this.resizeTimeout = setTimeout(() => {
+            this.handleAspectRatio();
+          }, 100);
+        });
+        
+        const previewWindow = this.$el.querySelector('.preview-window');
+        if (previewWindow) {
+          this.resizeObserver.observe(previewWindow);
+        }
+      }
+    },
+
     cleanup() {
       if (this.$refs.videoElement) {
         this.$refs.videoElement.removeEventListener('loadstart', this.onLoadStart);
         this.$refs.videoElement.removeEventListener('progress', this.onProgress);
         this.$refs.videoElement.removeEventListener('seeking', this.onSeeking);
         this.$refs.videoElement.removeEventListener('seeked', this.onSeeked);
+      }
+      
+      if (this.resizeObserver) {
+        this.resizeObserver.disconnect();
+      }
+      
+      if (this.resizeTimeout) {
+        clearTimeout(this.resizeTimeout);
       }
     },
   },
@@ -477,6 +632,7 @@ export default {
   border-radius: 4px;
   margin: 20px;
   min-height: 300px;
+  max-height: 60vh;
   position: relative;
   overflow: hidden;
 }
@@ -492,6 +648,8 @@ export default {
   height: auto;
   object-fit: contain;
   background-color: #000;
+  display: block;
+  margin: 0 auto;
 }
 
 /* Loading Overlay */

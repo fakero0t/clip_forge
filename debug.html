@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug ClipForge</title>
+</head>
+<body>
+    <div id="app">
+        <div style="padding: 20px; background: #f0f0f0; border: 2px solid #333;">
+            <h1>Debug Mode</h1>
+            <p>Testing Vue mounting...</p>
+        </div>
+    </div>
+    
+    <script type="module">
+        console.log('🔍 Debug: Starting Vue test...');
+        
+        try {
+            const { createApp } = await import('http://localhost:5173/node_modules/vue/dist/vue.runtime.esm-bundler.js');
+            console.log('✅ Debug: Vue imported successfully');
+            
+            const app = createApp({
+                template: '<div><h2>Vue is working!</h2><p>This means Vue can mount properly.</p></div>'
+            });
+            
+            app.mount('#app');
+            console.log('✅ Debug: Vue app mounted successfully');
+            
+        } catch (error) {
+            console.error('❌ Debug: Vue error:', error);
+        }
+    </script>
+</body>
+</html>

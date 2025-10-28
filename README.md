@@ -76,7 +76,9 @@ clip_forge/
 ## Current Status
 
 ✅ **PR #1 Complete**: Project setup with Electron/Vue boilerplate  
-✅ **PR #2 Complete**: FFmpeg integration & basic video processing
+✅ **PR #2 Complete**: FFmpeg integration & basic video processing  
+✅ **PR #6 Complete**: Video player integration & preview window  
+✅ **PR #7 Complete**: Clip arrangement & drag-drop on timeline
 
 ### FFmpeg Integration Features
 
@@ -86,6 +88,17 @@ clip_forge/
 - Support for MP4, MOV, WebM, AVI, MKV formats
 - File format validation and utility functions
 - Comprehensive error handling and logging
+
+### Timeline & Drag-Drop Features
+
+- Drag video files from media library to timeline tracks
+- Reposition clips by dragging on timeline
+- Multi-track support with visual track indicators
+- Clip selection with visual feedback
+- Collision detection prevents overlapping clips
+- Grid snapping for precise positioning
+- Keyboard shortcuts (Delete/Backspace to remove clips, Escape to clear selection)
+- Real-time visual feedback during drag operations
 
 ### Testing FFmpeg
 

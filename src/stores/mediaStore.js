@@ -88,13 +88,21 @@ export const useMediaStore = defineStore('media', {
           if (fileIndex !== -1) {
             this.mediaFiles[fileIndex] = {
               ...this.mediaFiles[fileIndex],
-              duration: metadata.duration,
-              resolution: `${metadata.video.width}x${metadata.video.height}`,
-              codec: metadata.video.codec,
+              duration: metadata.duration || 0,
+              resolution: metadata.video.width && metadata.video.height ? 
+                `${metadata.video.width}x${metadata.video.height}` : 'Unknown',
+              codec: metadata.video.codec || 'Unknown',
               isProcessing: false,
+              // Add flags for basic metadata
+              isBasicMetadata: metadata.isBasicMetadata || false,
+              metadataError: metadata.originalError || null,
             };
             
-            console.log('✅ mediaStore: Processed file:', file.name, metadata);
+            if (metadata.isBasicMetadata) {
+              console.warn('⚠️ mediaStore: Using basic metadata for file:', file.name, 'Reason:', metadata.originalError);
+            } else {
+              console.log('✅ mediaStore: Processed file:', file.name, metadata);
+            }
           }
           
           // Generate thumbnail
@@ -104,11 +112,26 @@ export const useMediaStore = defineStore('media', {
           console.error('❌ mediaStore: Error processing file:', file.name, error);
           const fileIndex = this.mediaFiles.findIndex(f => f.id === file.id);
           if (fileIndex !== -1) {
+            // Determine if this is a critical error or just metadata extraction failure
+            const isCriticalError = error.message.includes('File does not exist') || 
+                                   error.message.includes('Permission denied') ||
+                                   error.message.includes('File is empty');
+            
             this.mediaFiles[fileIndex] = {
               ...this.mediaFiles[fileIndex],
               isProcessing: false,
-              error: error.message,
+              error: isCriticalError ? error.message : null,
+              // For non-critical errors, try to use basic metadata
+              isBasicMetadata: !isCriticalError,
+              metadataError: !isCriticalError ? error.message : null,
+              duration: 0,
+              resolution: 'Unknown',
+              codec: 'Unknown',
             };
+            
+            if (!isCriticalError) {
+              console.warn('⚠️ mediaStore: Using basic metadata due to processing error:', file.name);
+            }
           }
         }
       }

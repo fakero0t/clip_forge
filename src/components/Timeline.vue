@@ -37,14 +37,27 @@
             <span class="track-number">{{ index + 1 }}</span>
           </div>
           
-          <div class="track-content" @click="handleTrackClick">
+          <div 
+            class="track-content" 
+            :class="{ 'drop-zone-active': isDropZoneActive && hoveredTrackId === track.id }"
+            @click="handleTrackClick"
+            @dragover="handleTrackDragOver($event, track.id)"
+            @dragenter="handleTrackDragEnter($event, track.id)"
+            @dragleave="handleTrackDragLeave($event, track.id)"
+            @drop="handleTrackDrop($event, track.id)"
+          >
             <!-- Clip Blocks -->
             <div 
               v-for="clip in track.clips" 
               :key="clip.id"
               class="clip-block"
+              :class="{ 
+                'selected': selectedClips.includes(clip.id),
+                'dragging': draggingClipId === clip.id
+              }"
               :style="getClipStyle(clip)"
               @mousedown="startDragClip(clip, $event)"
+              @click="selectClip(clip.id, $event.ctrlKey || $event.metaKey)"
             >
               <div class="clip-thumbnail" v-if="clip.thumbnail">
                 <img :src="getThumbnailSrc(clip.thumbnail)" :alt="clip.name" />
@@ -106,6 +119,12 @@ export default {
       dragType: null, // 'clip' or 'playhead'
       dragStartX: 0,
       dragStartTime: 0,
+      
+      // Drag-drop state
+      isDropZoneActive: false,
+      hoveredTrackId: null,
+      draggingClipId: null,
+      selectedClips: [],
     };
   },
   
@@ -311,11 +330,13 @@ export default {
     setupEventListeners() {
       document.addEventListener('mousemove', this.handleMouseMove);
       document.addEventListener('mouseup', this.handleMouseUp);
+      document.addEventListener('keydown', this.handleKeyDown);
     },
     
     removeEventListeners() {
       document.removeEventListener('mousemove', this.handleMouseMove);
       document.removeEventListener('mouseup', this.handleMouseUp);
+      document.removeEventListener('keydown', this.handleKeyDown);
     },
     
     handleMouseMove(event) {
@@ -328,13 +349,48 @@ export default {
         this.currentTime = Math.max(0, this.currentTime + deltaTime);
         // Update timeline store to sync with video player
         this.timelineStore.setCurrentTime(this.currentTime);
+      } else if (this.dragType === 'clip' && this.draggingClipId) {
+        // Handle clip repositioning
+        this.updateClipPosition(this.draggingClipId, this.dragStartTime + deltaTime);
       }
-      // Handle clip dragging here
     },
     
     handleMouseUp() {
       this.isDragging = false;
       this.dragType = null;
+      this.draggingClipId = null;
+    },
+
+    updateClipPosition(clipId, newStartTime) {
+      // Find the clip
+      let clip = null;
+      let track = null;
+      
+      for (const t of this.tracks) {
+        const foundClip = t.clips.find(c => c.id === clipId);
+        if (foundClip) {
+          clip = foundClip;
+          track = t;
+          break;
+        }
+      }
+      
+      if (!clip || !track) return;
+      
+      // Snap to grid
+      const snappedTime = this.snapToGrid(Math.max(0, newStartTime));
+      
+      // Check for collisions with other clips in the same track
+      const otherClips = track.clips.filter(c => c.id !== clipId);
+      const hasCollision = otherClips.some(otherClip => {
+        const otherEndTime = otherClip.startTime + otherClip.duration;
+        const clipEndTime = snappedTime + clip.duration;
+        return (snappedTime < otherEndTime && clipEndTime > otherClip.startTime);
+      });
+      
+      if (!hasCollision) {
+        clip.startTime = snappedTime;
+      }
     },
     
     handleTrackClick(event) {
@@ -382,6 +438,193 @@ export default {
       }
       
       return thumbnailPath;
+    },
+
+    // Drag-drop methods
+    handleTrackDragOver(event, trackId) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      this.hoveredTrackId = trackId;
+      this.isDropZoneActive = true;
+    },
+
+    handleTrackDragEnter(event, trackId) {
+      event.preventDefault();
+      this.hoveredTrackId = trackId;
+      this.isDropZoneActive = true;
+    },
+
+    handleTrackDragLeave(event, trackId) {
+      event.preventDefault();
+      // Only clear if we're leaving the track entirely
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        this.hoveredTrackId = null;
+        this.isDropZoneActive = false;
+      }
+    },
+
+    handleTrackDrop(event, trackId) {
+      event.preventDefault();
+      this.isDropZoneActive = false;
+      this.hoveredTrackId = null;
+      
+      try {
+        const dragData = JSON.parse(event.dataTransfer.getData('application/json'));
+        
+        if (dragData.type === 'media-file') {
+          console.log('🎬 Timeline: Dropping media file on track:', trackId);
+          this.addMediaFileToTrack(dragData.file, trackId, event);
+        }
+      } catch (error) {
+        console.error('❌ Timeline: Error parsing drag data:', error);
+      }
+    },
+
+    addMediaFileToTrack(mediaFile, trackId, event) {
+      // Calculate drop position
+      const rect = event.currentTarget.getBoundingClientRect();
+      const dropX = event.clientX - rect.left;
+      const dropTime = dropX / (this.pixelsPerSecond * this.zoomLevel);
+      const snappedTime = this.snapToGrid(dropTime);
+      
+      // Check for collisions
+      if (this.checkCollision(trackId, snappedTime, mediaFile.duration || 5)) {
+        console.warn('⚠️ Timeline: Collision detected, placing at end of track');
+        // Place at end of track if collision
+        const track = this.tracks.find(t => t.id === trackId);
+        const lastClip = track.clips[track.clips.length - 1];
+        const startTime = lastClip ? lastClip.startTime + lastClip.duration : 0;
+        this.addMediaFileAsClip(mediaFile, trackId, startTime);
+      } else {
+        this.addMediaFileAsClip(mediaFile, trackId, snappedTime);
+      }
+    },
+
+    addMediaFileAsClip(mediaFile, trackId = 'track1', startTime = null) {
+      console.log('🎬 Timeline: Adding media file as clip:', mediaFile.name);
+      
+      const track = this.tracks.find(t => t.id === trackId);
+      if (!track) {
+        console.error('❌ Timeline: Track not found:', trackId);
+        return null;
+      }
+      
+      // Use provided start time or calculate default
+      const clipStartTime = startTime !== null ? startTime : 
+        (track.clips.length > 0 ? 
+          track.clips[track.clips.length - 1].startTime + track.clips[track.clips.length - 1].duration : 0);
+      
+      // Use actual duration if available, otherwise default to 5 seconds
+      const duration = mediaFile.duration || 5;
+      
+      const newClip = {
+        id: `clip_${mediaFile.id}_${Date.now()}`,
+        startTime: clipStartTime,
+        duration: duration,
+        name: mediaFile.name,
+        mediaFileId: mediaFile.id,
+        thumbnail: mediaFile.thumbnail,
+        resolution: mediaFile.resolution,
+        codec: mediaFile.codec,
+        filePath: mediaFile.path,
+        fileSize: mediaFile.size,
+      };
+      
+      track.clips.push(newClip);
+      this.updateTotalDuration();
+      
+      // Select the new clip
+      this.selectClip(newClip.id, false);
+      
+      console.log('✅ Timeline: Clip added to timeline:', newClip.name);
+      return newClip;
+    },
+
+    checkCollision(trackId, startTime, duration) {
+      const track = this.tracks.find(t => t.id === trackId);
+      if (!track) return false;
+      
+      const endTime = startTime + duration;
+      
+      return track.clips.some(clip => {
+        const clipEndTime = clip.startTime + clip.duration;
+        return (startTime < clipEndTime && endTime > clip.startTime);
+      });
+    },
+
+    snapToGrid(time) {
+      const gridSize = 1; // 1 second grid
+      return Math.round(time / gridSize) * gridSize;
+    },
+
+    // Clip selection
+    selectClip(clipId, multiSelect = false) {
+      if (multiSelect) {
+        if (this.selectedClips.includes(clipId)) {
+          this.selectedClips = this.selectedClips.filter(id => id !== clipId);
+        } else {
+          this.selectedClips.push(clipId);
+        }
+      } else {
+        this.selectedClips = [clipId];
+      }
+    },
+
+    // Enhanced clip dragging
+    startDragClip(clip, event) {
+      this.isDragging = true;
+      this.dragType = 'clip';
+      this.draggingClipId = clip.id;
+      this.dragStartX = event.clientX;
+      this.dragStartTime = clip.startTime;
+      
+      // Select the clip if not already selected
+      if (!this.selectedClips.includes(clip.id)) {
+        this.selectClip(clip.id, false);
+      }
+      
+      event.preventDefault();
+    },
+
+    // Keyboard shortcuts
+    handleKeyDown(event) {
+      // Delete selected clips with Delete or Backspace key
+      if ((event.key === 'Delete' || event.key === 'Backspace') && this.selectedClips.length > 0) {
+        event.preventDefault();
+        this.deleteSelectedClips();
+      }
+      
+      // Escape to clear selection
+      if (event.key === 'Escape') {
+        this.clearSelection();
+      }
+    },
+
+    deleteSelectedClips() {
+      console.log('🗑️ Timeline: Deleting selected clips:', this.selectedClips);
+      
+      this.selectedClips.forEach(clipId => {
+        this.removeClip(clipId);
+      });
+      
+      this.selectedClips = [];
+    },
+
+    removeClip(clipId) {
+      for (const track of this.tracks) {
+        const index = track.clips.findIndex(clip => clip.id === clipId);
+        if (index !== -1) {
+          track.clips.splice(index, 1);
+          this.updateTotalDuration();
+          console.log('✅ Timeline: Clip removed:', clipId);
+          return true;
+        }
+      }
+      return false;
+    },
+
+    clearSelection() {
+      this.selectedClips = [];
     },
   },
 };
@@ -631,5 +874,24 @@ export default {
 .zoom-level {
   color: #4a9eff;
   font-weight: 500;
+}
+
+/* Drag-drop styles */
+.track-content.drop-zone-active {
+  background-color: rgba(74, 158, 255, 0.1);
+  border: 2px dashed #4a9eff;
+  border-radius: 4px;
+}
+
+.clip-block.selected {
+  border: 2px solid #ff6b6b;
+  box-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+}
+
+.clip-block.dragging {
+  opacity: 0.7;
+  transform: scale(1.05);
+  z-index: 1000;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
 }
 </style>
