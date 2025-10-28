@@ -12,30 +12,16 @@
 
     <main class="app-main">
       <aside class="media-library-container">
-        <MediaLibrary :ffmpeg-available="ffmpegAvailable" />
+        <MediaLibrary 
+          :ffmpeg-available="ffmpegAvailable" 
+          @video-selected="onVideoSelected"
+        />
       </aside>
 
       <section class="editor-section">
-        <div class="preview-container">
-          <div class="preview-window">
-            <div class="preview-placeholder">
-              <p>Preview Window</p>
-            </div>
-          </div>
-        </div>
+        <VideoPlayer ref="videoPlayer" />
 
-        <div class="timeline-container">
-          <div class="timeline-header">
-            <h3>Timeline</h3>
-            <div class="timeline-controls">
-              <button class="btn-icon" title="Zoom In">+</button>
-              <button class="btn-icon" title="Zoom Out">-</button>
-            </div>
-          </div>
-          <div class="timeline-content">
-            <p class="placeholder-text">Drag clips here to begin editing</p>
-          </div>
-        </div>
+        <Timeline />
 
         <div class="transport-controls">
           <button class="btn-transport" title="Play/Pause">▶</button>
@@ -50,11 +36,17 @@
 <script>
 import { testFFmpegIntegration } from './utils/testFFmpeg.js';
 import MediaLibrary from './components/MediaLibrary.vue';
+import Timeline from './components/Timeline.vue';
+import VideoPlayer from './components/VideoPlayer.vue';
+import { useMediaStore } from './stores/mediaStore.js';
+import { useTimelineStore } from './stores/timelineStore.js';
 
 export default {
   name: 'App',
   components: {
     MediaLibrary,
+    Timeline,
+    VideoPlayer,
   },
   data() {
     return {
@@ -62,12 +54,34 @@ export default {
       ffmpegAvailable: false,
     };
   },
+  
+  computed: {
+    mediaStore() {
+      return useMediaStore();
+    },
+    timelineStore() {
+      return useTimelineStore();
+    },
+  },
+  
+  watch: {
+    // Watch for changes in media files and sync with timeline
+    'mediaStore.mediaFiles': {
+      handler(newMediaFiles) {
+        console.log('🔄 App: Media files changed, syncing with timeline');
+        this.timelineStore.syncWithMediaFiles(newMediaFiles);
+      },
+      deep: true,
+    },
+  },
   async mounted() {
     console.log('🎬 App.vue: Component mounted, starting initialization...');
     console.log('🔧 App.vue: Checking FFmpeg status...');
     await this.checkFFmpegStatus();
     console.log('✅ App.vue: Initialization complete!');
+    console.log('🎬 App: VideoPlayer ref exists:', !!this.$refs.videoPlayer);
   },
+  
   methods: {
     async checkFFmpegStatus() {
       console.log('🔍 App.vue: Starting FFmpeg status check...');
@@ -84,6 +98,17 @@ export default {
         console.error('❌ App.vue: FFmpeg check failed:', error);
         this.ffmpegStatus = 'FFmpeg Error ❌';
         this.ffmpegAvailable = false;
+      }
+    },
+    
+    onVideoSelected(videoFile) {
+      console.log('🎬 App: Video selected:', videoFile.name);
+      console.log('🎬 App: VideoPlayer ref exists:', !!this.$refs.videoPlayer);
+      if (this.$refs.videoPlayer) {
+        console.log('🎬 App: Calling loadVideo on VideoPlayer');
+        this.$refs.videoPlayer.loadVideo(videoFile);
+      } else {
+        console.error('❌ App: VideoPlayer ref not found');
       }
     },
   },
@@ -158,84 +183,55 @@ export default {
   background-color: #1a1a1a;
 }
 
-.preview-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  min-height: 300px;
-}
 
-.preview-window {
-  width: 100%;
-  max-width: 800px;
-  aspect-ratio: 16 / 9;
-  background-color: #000;
-  border: 1px solid #333;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.preview-placeholder {
-  color: #666;
-  font-size: 18px;
-}
-
-.timeline-container {
+.timeline-placeholder {
   height: 250px;
   background-color: #252525;
   border-top: 1px solid #333;
   display: flex;
   flex-direction: column;
-}
-
-.timeline-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #333;
-}
-
-.timeline-header h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.timeline-controls {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-icon {
-  width: 32px;
-  height: 32px;
-  background-color: #333;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-icon:hover {
-  background-color: #444;
-}
-
-.timeline-content {
-  flex: 1;
-  display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
 }
+
+.timeline-placeholder h3 {
+  margin: 0 0 10px 0;
+  color: #4a9eff;
+  font-size: 16px;
+}
+
+.timeline-placeholder p {
+  margin: 0;
+  color: #aaa;
+  font-size: 14px;
+}
+
+.video-player-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  margin: 20px;
+  min-height: 300px;
+}
+
+.video-player-placeholder h3 {
+  margin: 0 0 10px 0;
+  color: #4a9eff;
+  font-size: 18px;
+}
+
+.video-player-placeholder p {
+  margin: 0;
+  color: #aaa;
+  font-size: 14px;
+}
+
 
 .transport-controls {
   display: flex;

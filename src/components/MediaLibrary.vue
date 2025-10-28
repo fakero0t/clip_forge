@@ -46,7 +46,7 @@
             'thumbnail-loaded': file.thumbnailGenerated
           }"
         >
-          <div class="media-thumbnail">
+          <div class="media-thumbnail" @click="selectVideo(file)">
             <img 
               v-if="file.thumbnail && file.thumbnailGenerated" 
               :src="getThumbnailSrc(file.thumbnail)" 
@@ -362,6 +362,11 @@ export default {
         this.mediaStore.setError(`Failed to retry thumbnail: ${error.message}`);
       }
     },
+
+    selectVideo(file) {
+      console.log('🎬 MediaLibrary: Video selected:', file.name);
+      this.$emit('video-selected', file);
+    },
   },
 };
 </script>
@@ -559,6 +564,13 @@ export default {
   position: relative;
   overflow: hidden;
   border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.media-thumbnail:hover {
+  background-color: #444;
+  transform: scale(1.02);
 }
 
 .media-thumbnail img {
