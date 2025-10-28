@@ -97,15 +97,22 @@ export default {
       return !!this.currentVideoSrc && !this.hasError && !this.isLoading;
     },
     
+    // Store instances
+    timelineStore() {
+      return useTimelineStore();
+    },
+    
+    mediaStore() {
+      return useMediaStore();
+    },
+    
     // Timeline store values
     timelineCurrentTime() {
-      const timelineStore = useTimelineStore();
-      return timelineStore.currentTime;
+      return this.timelineStore.currentTime;
     },
     
     timelineIsPlaying() {
-      const timelineStore = useTimelineStore();
-      return timelineStore.isPlaying;
+      return this.timelineStore.isPlaying;
     },
   },
   
@@ -188,11 +195,8 @@ export default {
     renderTimelinePreview(time) {
       if (!this.$refs.videoElement) return;
       
-      const timelineStore = useTimelineStore();
-      const mediaStore = useMediaStore();
-      
       // Find which clip should be playing at this time
-      const clipsAtTime = timelineStore.getClipsAtTime(time);
+      const clipsAtTime = this.timelineStore.getClipsAtTime(time);
       
       if (clipsAtTime.length > 0) {
         // Get the topmost clip (highest track)
@@ -203,7 +207,7 @@ export default {
         const clipTime = time - clip.startTime;
         
         // Switch to this clip's video source if different
-        const mediaFile = mediaStore.getMediaFileById(clip.mediaFileId);
+        const mediaFile = this.mediaStore.getMediaFileById(clip.mediaFileId);
         if (mediaFile && mediaFile.path !== this.currentVideoSrc) {
           this.switchVideoSource(mediaFile);
         }
@@ -353,8 +357,7 @@ export default {
       
       // Update timeline if we're not syncing from timeline
       if (!this.timelineSyncEnabled) {
-        const timelineStore = useTimelineStore();
-        timelineStore.setCurrentTime(this.currentTime);
+        this.timelineStore.setCurrentTime(this.currentTime);
       }
     },
     

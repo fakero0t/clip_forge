@@ -51,11 +51,6 @@ function createWindow() {
     mainWindow.show();
   });
 
-// Initialize FFmpeg handler
-console.log('🔧 main.cjs: Initializing FFmpeg handler...');
-ffmpegHandler = new FFmpegHandler();
-console.log('✅ main.cjs: FFmpeg handler initialized');
-
   // Create application menu
   createMenu();
 
@@ -67,13 +62,20 @@ console.log('✅ main.cjs: FFmpeg handler initialized');
 // IPC handlers for FFmpeg operations
 ipcMain.handle('ffmpeg-check-availability', async () => {
   console.log('🔍 main.cjs: IPC ffmpeg-check-availability called');
-  const result = ffmpegHandler ? ffmpegHandler.isAvailable : false;
+  if (!ffmpegHandler) {
+    console.log('❌ main.cjs: FFmpeg handler not initialized');
+    return false;
+  }
+  const result = ffmpegHandler.isAvailable;
   console.log('📊 main.cjs: FFmpeg availability result:', result);
   return result;
 });
 
 ipcMain.handle('ffmpeg-get-metadata', async (event, filePath) => {
   try {
+    if (!ffmpegHandler) {
+      throw new Error('FFmpeg handler not initialized');
+    }
     return await ffmpegHandler.getVideoMetadata(filePath);
   } catch (error) {
     throw new Error(`Failed to get metadata: ${error.message}`);
@@ -82,6 +84,9 @@ ipcMain.handle('ffmpeg-get-metadata', async (event, filePath) => {
 
 ipcMain.handle('ffmpeg-generate-thumbnail', async (event, inputPath, outputPath, timeOffset, options) => {
   try {
+    if (!ffmpegHandler) {
+      throw new Error('FFmpeg handler not initialized');
+    }
     console.log(`🎬 main.cjs: Generating thumbnail for ${inputPath}`);
     return await ffmpegHandler.generateThumbnailWithFallback(inputPath, outputPath, options);
   } catch (error) {
@@ -91,14 +96,23 @@ ipcMain.handle('ffmpeg-generate-thumbnail', async (event, inputPath, outputPath,
 });
 
 ipcMain.handle('ffmpeg-is-supported-format', async (event, filePath) => {
+  if (!ffmpegHandler) {
+    return false;
+  }
   return ffmpegHandler.isSupportedVideoFormat(filePath);
 });
 
 ipcMain.handle('ffmpeg-format-file-size', async (event, bytes) => {
+  if (!ffmpegHandler) {
+    return '0 B';
+  }
   return ffmpegHandler.formatFileSize(bytes);
 });
 
 ipcMain.handle('ffmpeg-format-duration', async (event, seconds) => {
+  if (!ffmpegHandler) {
+    return '00:00:00';
+  }
   return ffmpegHandler.formatDuration(seconds);
 });
 
@@ -351,6 +365,11 @@ function createMenu() {
 
 // Register protocol for serving thumbnail files
 app.whenReady().then(() => {
+  // Initialize FFmpeg handler
+  console.log('🔧 main.cjs: Initializing FFmpeg handler...');
+  ffmpegHandler = new FFmpegHandler();
+  console.log('✅ main.cjs: FFmpeg handler initialized');
+  
   // Register a custom protocol for serving thumbnail files
   protocol.registerFileProtocol('thumbnail', (request, callback) => {
     const url = request.url.substr(12); // Remove 'thumbnail://' prefix

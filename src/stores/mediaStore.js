@@ -89,8 +89,8 @@ export const useMediaStore = defineStore('media', {
             this.mediaFiles[fileIndex] = {
               ...this.mediaFiles[fileIndex],
               duration: metadata.duration,
-              resolution: metadata.resolution,
-              codec: metadata.codec,
+              resolution: `${metadata.video.width}x${metadata.video.height}`,
+              codec: metadata.video.codec,
               isProcessing: false,
             };
             

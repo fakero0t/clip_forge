@@ -81,6 +81,7 @@
 
 <script>
 import { useMediaStore } from '../stores/mediaStore.js';
+import { useTimelineStore } from '../stores/timelineStore.js';
 
 export default {
   name: 'Timeline',
@@ -132,6 +133,10 @@ export default {
   computed: {
     mediaStore() {
       return useMediaStore();
+    },
+    
+    timelineStore() {
+      return useTimelineStore();
     },
     playheadPosition() {
       return this.currentTime * this.pixelsPerSecond * this.zoomLevel;
