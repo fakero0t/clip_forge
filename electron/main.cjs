@@ -1,6 +1,6 @@
 console.log('🚀 main.cjs: Starting Electron main process...');
 
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, protocol } = require('electron');
 console.log('✅ main.cjs: Electron modules imported');
 
 const path = require('path');
@@ -347,8 +347,15 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// App lifecycle
+// Register protocol for serving thumbnail files
 app.whenReady().then(() => {
+  // Register a custom protocol for serving thumbnail files
+  protocol.registerFileProtocol('thumbnail', (request, callback) => {
+    const url = request.url.substr(12); // Remove 'thumbnail://' prefix
+    const filePath = path.join(__dirname, '..', url);
+    callback({ path: filePath });
+  });
+
   createWindow();
 
   app.on('activate', () => {

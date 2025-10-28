@@ -149,6 +149,8 @@ export default {
   flex-direction: column;
 }
 
+
+
 .editor-section {
   flex: 1;
   display: flex;

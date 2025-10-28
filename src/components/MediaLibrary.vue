@@ -2,13 +2,19 @@
   <div class="media-library">
     <div class="library-header">
       <h2>Media Library</h2>
-      <button 
-        class="btn-import" 
-        @click="openFilePicker"
-        :disabled="isLoading"
-      >
-        {{ isLoading ? 'Importing...' : 'Import Media' }}
-      </button>
+      <div class="header-actions">
+        <span v-if="isLoading" class="loading-indicator">
+          <div class="mini-spinner"></div>
+          Processing...
+        </span>
+        <button 
+          class="btn-import" 
+          @click="openFilePicker"
+          :disabled="isLoading"
+        >
+          {{ isLoading ? 'Importing...' : 'Import Media' }}
+        </button>
+      </div>
     </div>
 
     <!-- Drag and Drop Zone -->
@@ -34,45 +40,87 @@
           v-for="file in mediaFiles" 
           :key="file.id"
           class="media-item"
-          :class="{ 'processing': file.isProcessing, 'error': file.error }"
+          :class="{ 
+            'processing': file.isProcessing, 
+            'error': file.error,
+            'thumbnail-loaded': file.thumbnailGenerated
+          }"
         >
           <div class="media-thumbnail">
             <img 
-              v-if="file.thumbnail" 
-              :src="`file://${file.thumbnail}`" 
+              v-if="file.thumbnail && file.thumbnailGenerated" 
+              :src="getThumbnailSrc(file.thumbnail)" 
               :alt="file.name"
               @error="handleThumbnailError"
+              @load="handleThumbnailLoad"
             />
             <div v-else-if="file.isProcessing" class="processing-indicator">
               <div class="spinner"></div>
+              <span class="processing-text">Processing...</span>
             </div>
             <div v-else-if="file.error" class="error-indicator">
-              ⚠️
+              <div class="error-icon">⚠️</div>
+              <span class="error-text">Error</span>
+            </div>
+            <div v-else-if="file.thumbnailError" class="thumbnail-error">
+              <div class="error-icon">🖼️</div>
+              <span class="error-text">Thumbnail failed</span>
             </div>
             <div v-else class="placeholder-thumbnail">
-              🎬
+              <div class="video-icon">🎬</div>
+              <span class="placeholder-text">Loading...</span>
             </div>
           </div>
           
           <div class="media-info">
-            <h4 class="media-name" :title="file.name">{{ file.name }}</h4>
+            <h4 class="media-name" :title="file.name">{{ truncateFileName(file.name) }}</h4>
             <div class="media-meta">
-              <span v-if="file.duration" class="duration">{{ formatDuration(file.duration) }}</span>
-              <span v-if="file.resolution" class="resolution">{{ file.resolution }}</span>
-              <span class="file-size">{{ formatFileSize(file.size) }}</span>
+              <div class="meta-row">
+                <span v-if="file.duration" class="duration">
+                  <span class="meta-icon">⏱️</span>
+                  {{ formatDuration(file.duration) }}
+                </span>
+                <span v-if="file.resolution" class="resolution">
+                  <span class="meta-icon">📐</span>
+                  {{ file.resolution }}
+                </span>
+              </div>
+              <div class="meta-row">
+                <span class="file-size">
+                  <span class="meta-icon">💾</span>
+                  {{ formatFileSize(file.size) }}
+                </span>
+                <span v-if="file.codec" class="codec">
+                  <span class="meta-icon">🎥</span>
+                  {{ file.codec }}
+                </span>
+              </div>
             </div>
             <div v-if="file.error" class="error-message">
               {{ file.error }}
             </div>
+            <div v-if="file.thumbnailError" class="thumbnail-error-message">
+              Thumbnail: {{ file.thumbnailError }}
+            </div>
           </div>
           
-          <button 
-            class="btn-remove" 
-            @click="removeFile(file.id)"
-            title="Remove file"
-          >
-            ×
-          </button>
+          <div class="media-actions">
+            <button 
+              class="btn-remove" 
+              @click="removeFile(file.id)"
+              title="Remove file"
+            >
+              <span class="remove-icon">×</span>
+            </button>
+            <button 
+              v-if="file.thumbnailError && !file.isProcessing"
+              class="btn-retry-thumbnail" 
+              @click="retryThumbnail(file.id)"
+              title="Retry thumbnail generation"
+            >
+              <span class="retry-icon">🔄</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -125,6 +173,25 @@ export default {
     },
     error() {
       return this.mediaStore.error;
+    },
+    
+    getThumbnailSrc() {
+      return (thumbnailPath) => {
+        // Safety check
+        if (!thumbnailPath) {
+          return '';
+        }
+        
+        // In Electron, use custom protocol to serve thumbnail files
+        if (window.electronAPI && window.electronAPI.isElectron) {
+          // Convert file path to custom protocol URL
+          const relativePath = thumbnailPath.replace(/\\/g, '/'); // Normalize path separators
+          return `thumbnail://${relativePath}`;
+        }
+        
+        // Fallback for web environment
+        return thumbnailPath;
+      };
     },
   },
   mounted() {
@@ -272,6 +339,29 @@ export default {
       console.warn('⚠️ MediaLibrary: Thumbnail load error:', event.target.src);
       event.target.style.display = 'none';
     },
+
+    handleThumbnailLoad(event) {
+      console.log('✅ MediaLibrary: Thumbnail loaded successfully');
+      // Thumbnail loaded successfully, no additional action needed
+    },
+
+    truncateFileName(fileName, maxLength = 20) {
+      if (fileName.length <= maxLength) return fileName;
+      const extension = fileName.split('.').pop();
+      const nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
+      const truncatedName = nameWithoutExt.substring(0, maxLength - extension.length - 4);
+      return `${truncatedName}...${extension}`;
+    },
+
+    async retryThumbnail(fileId) {
+      try {
+        console.log('🔄 MediaLibrary: Retrying thumbnail generation for:', fileId);
+        await this.mediaStore.generateThumbnail(fileId);
+      } catch (error) {
+        console.error('❌ MediaLibrary: Thumbnail retry failed:', error);
+        this.mediaStore.setError(`Failed to retry thumbnail: ${error.message}`);
+      }
+    },
   },
 };
 </script>
@@ -297,6 +387,30 @@ export default {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #4a9eff;
+  font-weight: 500;
+}
+
+.mini-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #444;
+  border-top: 2px solid #4a9eff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 .btn-import {
@@ -375,60 +489,123 @@ export default {
 
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 16px;
   padding: 16px;
   max-height: 100%;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #444 #2a2a2a;
+}
+
+.media-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.media-grid::-webkit-scrollbar-track {
+  background: #2a2a2a;
+  border-radius: 3px;
+}
+
+.media-grid::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.media-grid::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 
 .media-item {
   position: relative;
   background-color: #2a2a2a;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
 }
 
 .media-item:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  border-color: #4a9eff;
 }
 
 .media-item.processing {
-  opacity: 0.7;
+  opacity: 0.8;
+  border-color: #4a9eff;
 }
 
 .media-item.error {
-  border: 1px solid #ff6b6b;
+  border-color: #ff6b6b;
+  background-color: #3a2a2a;
+}
+
+.media-item.thumbnail-loaded {
+  border-color: #4a9eff;
+}
+
+.media-item.thumbnail-loaded:hover {
+  border-color: #5aaeff;
 }
 
 .media-thumbnail {
   width: 100%;
-  height: 68px;
+  height: 80px;
   background-color: #333;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow: hidden;
+  border-radius: 6px 6px 0 0;
 }
 
 .media-thumbnail img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: opacity 0.3s ease;
 }
 
 .processing-indicator,
 .error-indicator,
+.thumbnail-error,
 .placeholder-thumbnail {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
+  gap: 4px;
+}
+
+.processing-indicator {
+  color: #4a9eff;
+}
+
+.error-indicator,
+.thumbnail-error {
+  color: #ff6b6b;
+}
+
+.placeholder-thumbnail {
+  color: #666;
+}
+
+.video-icon,
+.error-icon {
   font-size: 24px;
+  margin-bottom: 2px;
+}
+
+.processing-text,
+.error-text,
+.placeholder-text {
+  font-size: 10px;
+  font-weight: 500;
+  text-align: center;
 }
 
 .spinner {
@@ -438,6 +615,7 @@ export default {
   border-top: 2px solid #4a9eff;
   border-radius: 50%;
   animation: spin 1s linear infinite;
+  margin-bottom: 4px;
 }
 
 @keyframes spin {
@@ -446,64 +624,131 @@ export default {
 }
 
 .media-info {
-  padding: 8px;
+  padding: 10px;
+  flex: 1;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .media-name {
-  font-size: 11px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .media-meta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   font-size: 10px;
   color: #aaa;
+  flex: 1;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-row span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.meta-icon {
+  font-size: 8px;
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 
 .duration,
 .resolution,
-.file-size {
-  white-space: nowrap;
+.file-size,
+.codec {
+  font-size: 9px;
+  color: #bbb;
 }
 
-.error-message {
-  font-size: 10px;
+.error-message,
+.thumbnail-error-message {
+  font-size: 9px;
   color: #ff6b6b;
   margin-top: 4px;
+  line-height: 1.2;
 }
 
-.btn-remove {
+.thumbnail-error-message {
+  color: #ffa500;
+}
+
+.media-actions {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.media-item:hover .media-actions {
+  opacity: 1;
+}
+
+.btn-remove,
+.btn-retry-thumbnail {
   width: 20px;
   height: 20px;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0, 0.8);
   color: white;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.media-item:hover .btn-remove {
-  opacity: 1;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
 }
 
 .btn-remove:hover {
   background-color: #ff6b6b;
+  transform: scale(1.1);
+}
+
+.btn-retry-thumbnail:hover {
+  background-color: #4a9eff;
+  transform: scale(1.1);
+}
+
+.remove-icon,
+.retry-icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.retry-icon {
+  animation: none;
+}
+
+.btn-retry-thumbnail:hover .retry-icon {
+  animation: spin 0.5s linear infinite;
 }
 
 .error-banner {

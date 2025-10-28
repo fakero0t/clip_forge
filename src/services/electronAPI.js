@@ -3,11 +3,19 @@
 
 class ElectronAPI {
   constructor() {
-    this.isElectron = typeof window !== 'undefined' && window.require;
+    this.isElectron = false;
+    this.ipcRenderer = null;
     
-    if (this.isElectron) {
-      const { ipcRenderer } = window.require('electron');
-      this.ipcRenderer = ipcRenderer;
+    // Check if we're in Electron environment
+    if (typeof window !== 'undefined' && window.require) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        this.ipcRenderer = ipcRenderer;
+        this.isElectron = true;
+      } catch (error) {
+        console.warn('⚠️ electronAPI: Failed to access Electron APIs:', error);
+        this.isElectron = false;
+      }
     }
   }
 

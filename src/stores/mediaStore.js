@@ -44,6 +44,8 @@ export const useMediaStore = defineStore('media', {
               resolution: null,
               codec: null,
               thumbnail: null,
+              thumbnailGenerated: false,
+              thumbnailError: null,
               isProcessing: true,
               error: null,
             };
@@ -73,8 +75,13 @@ export const useMediaStore = defineStore('media', {
       
       for (const file of files) {
         try {
-          // Get metadata using FFmpeg
-          const metadata = await window.electronAPI.getVideoMetadata(file.path);
+        // Get metadata using FFmpeg
+        if (!window.electronAPI || !window.electronAPI.isElectron) {
+          console.warn('⚠️ mediaStore: Electron API not available, skipping metadata extraction');
+          return;
+        }
+        
+        const metadata = await window.electronAPI.getVideoMetadata(file.path);
           
           // Update file with metadata
           const fileIndex = this.mediaFiles.findIndex(f => f.id === file.id);
@@ -112,6 +119,11 @@ export const useMediaStore = defineStore('media', {
         const file = this.getMediaFileById(fileId);
         if (!file) return;
         
+        if (!window.electronAPI || !window.electronAPI.isElectron) {
+          console.warn('⚠️ mediaStore: Electron API not available, skipping thumbnail generation');
+          return;
+        }
+        
         // Generate thumbnail path
         const thumbnailPath = `temp/thumbnails/${fileId}.jpg`;
         
@@ -127,12 +139,18 @@ export const useMediaStore = defineStore('media', {
         const fileIndex = this.mediaFiles.findIndex(f => f.id === fileId);
         if (fileIndex !== -1) {
           this.mediaFiles[fileIndex].thumbnail = thumbnailPath;
+          this.mediaFiles[fileIndex].thumbnailGenerated = true;
         }
         
         console.log('✅ mediaStore: Generated thumbnail for:', file.name);
         
       } catch (error) {
         console.error('❌ mediaStore: Error generating thumbnail:', error);
+        // Mark thumbnail generation as failed
+        const fileIndex = this.mediaFiles.findIndex(f => f.id === fileId);
+        if (fileIndex !== -1) {
+          this.mediaFiles[fileIndex].thumbnailError = error.message;
+        }
       }
     },
 
